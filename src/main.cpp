@@ -2,6 +2,8 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+#include <glm/glm.hpp>
+
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
@@ -13,6 +15,33 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string>
+
+struct PlayerProperties {
+    const char *name;
+    float x, y, range;
+    glm::vec3 colour;
+
+    PlayerProperties(const char *name, float range, glm::vec3 colour) {
+        this->name = name;
+        this->range = range;
+        this->colour = colour;
+        this->x = 0.0f;
+        this->y = 0.0f;
+    }
+
+    void renderProperties(Shader shader) {
+        std::string range_tag = this->name;         range_tag.append("_range");
+        std::string position_tag = this->name;      position_tag.append("_pos");
+        std::string col_tag = this->name;      position_tag.append("_col");
+        
+        shader.setFloat(range_tag, this->range);
+        shader.setVec2(position_tag, this->x, this->y);
+        shader.setVec3(col_tag, colour.x, colour.y, colour.z);
+    }
+};
+
+void init_map_image(unsigned int *, unsigned int *, unsigned int *, unsigned int *);
 
 void error_callback(int error, const char* description)
 {
@@ -90,7 +119,83 @@ int main(int argc, char* argv[]) {
     glfwSwapInterval(1);
 
     Shader ourShader("shader.vs", "shader.fs");
+    unsigned int texture;
+    unsigned int VBO, VAO, EBO;
+    init_map_image(&texture, &VBO, &VAO, &EBO);
+    
 
+    ourShader.use(); 
+    ourShader.setInt("tex", 0);
+
+    PlayerProperties player1("player1", 10, glm::vec3(1.0f, 0.5f, 0.0f));
+    player1.x = 50;
+    player1.y = 50;
+
+    static bool hide_map = true;
+
+    while (!glfwWindowShouldClose(dm_window)) {
+
+        // Render to DM window
+        glfwMakeContextCurrent(dm_window);
+        glfwPollEvents();
+        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+		glClear(GL_COLOR_BUFFER_BIT);
+        
+
+        ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+
+        ImGui::Begin("Map Properties");
+		
+		ImGui::Checkbox("Hide Map?", &hide_map);
+        ImGui::End();
+
+        ImGui::Begin("Player Properties");
+		ImGui::SliderFloat("Player 1 Range", &player1.range, 0, 500.00f);
+        ImGui::End();
+
+        ImGui::Render();
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        glfwSwapBuffers(dm_window);
+
+        // Render To Game Window
+
+        glfwMakeContextCurrent(game_window);
+
+        glClearColor(1.0f, 1.0f, 1.0f, 1.00f);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+
+        ourShader.use();
+        ourShader.setBool("hide_map", hide_map);
+        player1.renderProperties(ourShader);
+
+        glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+        glfwSwapBuffers(game_window);
+        
+    }
+
+    ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
+
+    glfwDestroyWindow(dm_window);
+    glfwDestroyWindow(game_window);
+    glfwTerminate();
+    return 0;
+}
+
+
+void init_map_image(unsigned int *texture, unsigned int *VBO, unsigned int *VAO, unsigned int *EBO) {
     float vertices[] = {
         // positions          // colors           // texture coords
          1.0f,  1.0f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 1.0f, // top right
@@ -102,17 +207,17 @@ int main(int argc, char* argv[]) {
         0, 1, 3, // first triangle
         1, 2, 3  // second triangle
     };
-    unsigned int VBO, VAO, EBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
+    
+    glGenVertexArrays(1, VAO);
+    glGenBuffers(1, VBO);
+    glGenBuffers(1, EBO);
 
-    glBindVertexArray(VAO);
+    glBindVertexArray(*VAO);
 
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, *VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, *EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
     // position attribute
@@ -127,11 +232,11 @@ int main(int argc, char* argv[]) {
 
     // load and create a texture 
     // -------------------------
-    unsigned int texture;
+    
     // texture 1
     // ---------
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture); 
+    glGenTextures(1, texture);
+    glBindTexture(GL_TEXTURE_2D, *texture); 
      // set the texture wrapping parameters
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);	// set texture wrapping to GL_REPEAT (default wrapping method)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -153,63 +258,4 @@ int main(int argc, char* argv[]) {
         std::cout << "Failed to load texture" << std::endl;
     }
     stbi_image_free(data);
-
-    ourShader.use(); 
-    ourShader.setInt("tex", 0);
-
-    while (!glfwWindowShouldClose(dm_window)) {
-
-        // Render to DM window
-        glfwMakeContextCurrent(dm_window);
-        glfwPollEvents();
-        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
-		glClear(GL_COLOR_BUFFER_BIT);
-
-        
-
-        ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
-		ImGui::NewFrame();
-
-        ImGui::Begin("Game View Properties");
-		static float val = 0.0;
-		ImGui::SliderFloat("Colour Value", &val, 0, 1.00f);
-        ImGui::End();
-
-        ImGui::Render();
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-        glfwSwapBuffers(dm_window);
-
-        // Render To Game Window
-
-        glfwMakeContextCurrent(game_window);
-
-        glClearColor(1.0f * val, 1.0f * val, 1.0f * val, 1.00f);
-		glClear(GL_COLOR_BUFFER_BIT);
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, texture);
-
-        ourShader.use();
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-
-        
-
-        glfwSwapBuffers(game_window);
-        
-    }
-
-    ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
-	ImGui::DestroyContext();
-
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
-
-    glfwDestroyWindow(dm_window);
-    glfwDestroyWindow(game_window);
-    glfwTerminate();
-    return 0;
 }
